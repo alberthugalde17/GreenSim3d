@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GreenSim · Simulador Microclimático de Invernadero</title>
+<style>
+  :root{
+    --bg-0:#070b10; --bg-1:#0c1118; --glass:rgba(20,28,38,.55);
+    --glass-brd:rgba(120,160,200,.18); --txt:#e8eef6; --txt-dim:#9fb0c4;
+    --accent:#3fe0b0; --accent-2:#4aa8ff; --warn:#ff5d5d; --cold:#4aa8ff;
+    --hot:#ff5d4a; --opt:#3fe0b0; --shadow:0 8px 32px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:radial-gradient(1200px 800px at 70% -10%,#16202c 0%,var(--bg-0) 60%);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:var(--txt)}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+
+  /* ---------- Panels ---------- */
+  .glass{background:var(--glass);backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%);border:1px solid var(--glass-brd);
+    border-radius:16px;box-shadow:var(--shadow)}
+  #panel{position:absolute;top:16px;left:16px;width:340px;max-height:calc(100vh - 32px);
+    overflow-y:auto;padding:18px 18px 22px}
+  #panel::-webkit-scrollbar{width:8px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(120,160,200,.25);border-radius:8px}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .logo{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#04121a;font-weight:800;font-size:18px}
+  .brand h1{font-size:16px;font-weight:700;letter-spacing:.3px}
+  .brand small{display:block;color:var(--txt-dim);font-size:11px;font-weight:400}
+  .sec{margin-top:16px}
+  .sec h2{font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--accent);
+    margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .sec h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .ctrl{margin-bottom:12px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:12px;color:var(--txt-dim);margin-bottom:5px}
+  .ctrl label b{color:var(--txt);font-weight:600}
+  input[type=range]{-webkit-appearance:none;width:100%;height:5px;border-radius:6px;
+    background:linear-gradient(90deg,var(--accent-2),var(--accent));outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:#fff;border:2px solid var(--accent);box-shadow:0 0 6px rgba(0,0,0,.5);cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid var(--accent);cursor:pointer}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{flex:1;min-width:48px;padding:7px 4px;font-size:12px;border-radius:9px;cursor:pointer;
+    background:rgba(255,255,255,.05);border:1px solid var(--glass-brd);color:var(--txt-dim);transition:.15s}
+  .seg button.active{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#04121a;font-weight:700;border-color:transparent}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;font-size:12.5px}
+  .sw{position:relative;width:42px;height:23px;border-radius:14px;background:rgba(255,255,255,.12);
+    cursor:pointer;transition:.2s;border:1px solid var(--glass-brd)}
+  .sw.on{background:linear-gradient(135deg,var(--accent),var(--accent-2))}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
+    background:#fff;transition:.2s}
+  .sw.on::after{left:21px}
+
+  /* ---------- Readout (right) ---------- */
+  #readout{position:absolute;top:16px;right:16px;width:260px;padding:16px}
+  .metric{margin-bottom:13px}
+  .metric .k{font-size:11px;color:var(--txt-dim);text-transform:uppercase;letter-spacing:.6px}
+  .metric .v{font-size:26px;font-weight:700;line-height:1.1}
+  .metric .v span{font-size:13px;color:var(--txt-dim);font-weight:400}
+  .vpdbar{height:10px;border-radius:6px;margin-top:8px;position:relative;overflow:visible;
+    background:linear-gradient(90deg,#4aa8ff 0%,#3fe0b0 35%,#3fe0b0 55%,#ffb24a 72%,#ff5d4a 100%)}
+  .vpdbar .needle{position:absolute;top:-4px;width:3px;height:18px;background:#fff;border-radius:2px;
+    box-shadow:0 0 6px #fff;transition:left .3s}
+  .diag{margin-top:6px;padding:11px;border-radius:12px;font-size:12.5px;line-height:1.5;
+    background:rgba(255,255,255,.04);border-left:3px solid var(--accent)}
+  .diag.warn{border-left-color:var(--warn)}
+  .diag.cold{border-left-color:var(--cold)}
+  .diag b{display:block;margin-bottom:3px;font-size:13px}
+  .compass{width:96px;margin:2px auto 14px;text-align:center}
+  .compass svg{width:96px;height:96px;display:block;margin:0 auto}
+  #windNeedle{transition:transform .4s ease}
+  .windTxt{font-size:10.5px;color:var(--txt-dim);margin-top:1px}
+  .vpdscale{display:flex;justify-content:space-between;font-size:9px;color:var(--txt-dim);margin-top:4px;padding:0 1px}
+  .vpdscale span{position:relative}
+
+  /* ---------- Layers (bottom-left) ---------- */
+  #layers{position:absolute;bottom:16px;left:16px;padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;max-width:340px}
+  #layers .chip{font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:7px;
+    background:rgba(255,255,255,.05);border:1px solid var(--glass-brd);color:var(--txt-dim);transition:.15s;user-select:none}
+  #layers .chip .dot{width:8px;height:8px;border-radius:50%;background:#56657a}
+  #layers .chip.on{color:var(--txt);border-color:var(--accent)}
+  #layers .chip.on .dot{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+
+  /* ---------- Legend (bottom-right) ---------- */
+  #legend{position:absolute;bottom:16px;right:16px;padding:12px 14px;width:260px;font-size:11.5px}
+  #legend h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:8px}
+  .lg{display:flex;align-items:center;gap:8px;margin-bottom:5px;color:var(--txt-dim)}
+  .lg i{width:12px;height:12px;border-radius:3px;flex:none}
+
+  /* ---------- Top bar buttons ---------- */
+  #topbar{position:absolute;top:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+  #topbar .tb{padding:8px 14px;font-size:12.5px;border-radius:11px;cursor:pointer;display:flex;align-items:center;gap:7px;
+    background:var(--glass);backdrop-filter:blur(18px);border:1px solid var(--glass-brd);color:var(--txt);transition:.15s}
+  #topbar .tb:hover{border-color:var(--accent)}
+
+  /* preset row */
+  .presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .presets button{flex:1;min-width:70px;font-size:11px;padding:8px 4px;border-radius:9px;cursor:pointer;
+    background:rgba(255,255,255,.05);border:1px solid var(--glass-brd);color:var(--txt);transition:.15s}
+  .presets button:hover{border-color:var(--accent);background:rgba(63,224,176,.12)}
+
+  /* about modal */
+  #about{position:absolute;inset:0;display:none;place-items:center;background:rgba(4,8,12,.6);backdrop-filter:blur(4px);z-index:20}
+  #about.show{display:grid}
+  #about .card{width:min(560px,92vw);padding:26px;line-height:1.6;font-size:13.5px;color:var(--txt-dim)}
+  #about .card h2{color:var(--txt);font-size:20px;margin-bottom:12px}
+  #about .card a{color:var(--accent)}
+  #about .card p{margin-bottom:10px}
+  #about .close{float:right;cursor:pointer;color:var(--txt-dim);font-size:20px;line-height:1}
+  .hint{font-size:11px;color:var(--txt-dim);margin-top:10px;opacity:.8}
+  @media(max-width:980px){#readout,#legend{display:none}}
+  @media(max-width:680px){#panel{width:calc(100vw - 32px)}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- ============ CONTROL PANEL ============ -->
+<div id="panel" class="glass">
+  <div class="brand">
+    <div class="logo">G</div>
+    <div>
+      <h1>GreenSim 3D</h1>
+      <small data-i18n="subtitle">Simulador Microclimático · VPD en tiempo real</small>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2 data-i18n="presets">Escenarios</h2>
+    <div class="presets">
+      <button data-preset="optimal" data-i18n="p_optimal">Óptimo</button>
+      <button data-preset="hot" data-i18n="p_hot">Golpe de calor</button>
+      <button data-preset="humid" data-i18n="p_humid">Noche húmeda</button>
+      <button data-preset="chimney" data-i18n="p_chimney">Efecto chimenea</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2 data-i18n="external">Clima exterior</h2>
+    <div class="ctrl"><label data-k="extT"><span data-i18n="extT">Temperatura exterior</span> <b>28°C</b></label>
+      <input type="range" id="extT" min="-5" max="45" value="28" step="0.5"></div>
+    <div class="ctrl"><label data-k="extRH"><span data-i18n="extRH">Humedad relativa</span> <b>55%</b></label>
+      <input type="range" id="extRH" min="10" max="95" value="55" step="1"></div>
+    <div class="ctrl"><label data-k="wind"><span data-i18n="wind">Velocidad del viento</span> <b>2.0 m/s</b></label>
+      <input type="range" id="wind" min="0" max="10" value="2" step="0.1"></div>
+    <div class="ctrl"><label><span data-i18n="windDir">Dirección del viento</span></label>
+      <div class="seg" id="windDir">
+        <button data-v="N">N</button><button data-v="E" class="active">E</button>
+        <button data-v="S">S</button><button data-v="W">O</button>
+      </div></div>
+    <div class="ctrl"><label data-k="hour"><span data-i18n="hour">Hora del día</span> <b>13:00</b></label>
+      <input type="range" id="hour" min="0" max="24" value="13" step="0.5"></div>
+  </div>
+
+  <div class="sec">
+    <h2 data-i18n="actuators">Actuadores</h2>
+    <div class="ctrl"><label data-k="sideV"><span data-i18n="sideV">Cortinas laterales</span> <b>40%</b></label>
+      <input type="range" id="sideV" min="0" max="100" value="40" step="1"></div>
+    <div class="ctrl"><label data-k="roofV"><span data-i18n="roofV">Ventanas cenitales</span> <b>30%</b></label>
+      <input type="range" id="roofV" min="0" max="100" value="30" step="1"></div>
+    <div class="ctrl"><label data-k="fan"><span data-i18n="fan">Extractores / ventiladores</span> <b>0%</b></label>
+      <input type="range" id="fan" min="0" max="100" value="0" step="1"></div>
+    <div class="ctrl"><label data-k="fog"><span data-i18n="fog">Nebulización / cooling</span> <b>0%</b></label>
+      <input type="range" id="fog" min="0" max="100" value="0" step="1"></div>
+    <div class="toggle-row"><span data-i18n="thermal">Pantalla térmica</span><div class="sw" id="thermal"></div></div>
+    <div class="toggle-row"><span data-i18n="shade">Pantalla de sombreo</span><div class="sw" id="shade"></div></div>
+  </div>
+  <div class="hint" data-i18n="hint">Arrastra para rotar · rueda para zoom · clic derecho para desplazar</div>
+</div>
+
+<!-- ============ READOUT ============ -->
+<div id="readout" class="glass">
+  <div class="compass">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="46" fill="rgba(255,255,255,.03)" stroke="rgba(120,160,200,.28)" stroke-width="1.5"/>
+      <text x="50" y="13" text-anchor="middle" font-size="9" fill="#9fb0c4">N</text>
+      <text x="89" y="53" text-anchor="middle" font-size="9" fill="#9fb0c4">E</text>
+      <text x="50" y="94" text-anchor="middle" font-size="9" fill="#9fb0c4">S</text>
+      <text x="11" y="53" text-anchor="middle" font-size="9" fill="#9fb0c4">O</text>
+      <circle cx="50" cy="50" r="3" fill="#9fb0c4"/>
+      <g id="windNeedle" transform="rotate(0 50 50)">
+        <polygon points="50,18 56,50 50,44 44,50" fill="#3fe0b0"/>
+        <polygon points="50,82 56,50 50,56 44,50" fill="rgba(255,255,255,.18)"/>
+      </g>
+    </svg>
+    <div class="windTxt" id="windTxt">—</div>
+  </div>
+  <div class="metric"><div class="k" data-i18n="r_temp">Temp. interior</div><div class="v" id="rTemp">—</div></div>
+  <div class="metric"><div class="k" data-i18n="r_rh">Humedad interior</div><div class="v" id="rRH">—</div></div>
+  <div class="metric"><div class="k" data-i18n="r_vpd">VPD foliar</div><div class="v" id="rVPD">—</div>
+    <div class="vpdbar"><div class="needle" id="vpdNeedle" style="left:50%"></div></div>
+    <div class="vpdscale"><span>0</span><span>0.4</span><span>0.8</span><span>1.2</span><span>1.6</span><span>2.5</span></div>
+  </div>
+  <div class="metric"><div class="k" data-i18n="r_vent">Renovación de aire</div><div class="v" id="rVent" style="font-size:20px">—</div></div>
+  <div class="diag" id="diag"><b>—</b></div>
+</div>
+
+<!-- ============ LAYERS ============ -->
+<div id="layers" class="glass">
+  <div class="chip on" data-layer="air"><span class="dot"></span><span data-i18n="l_air">Flujo de aire</span></div>
+  <div class="chip on" data-layer="heat"><span class="dot"></span><span data-i18n="l_heat">Mapa de calor</span></div>
+  <div class="chip on" data-layer="vpd"><span class="dot"></span><span data-i18n="l_vpd">Estrés VPD</span></div>
+  <div class="chip on" data-layer="transp"><span class="dot"></span><span data-i18n="l_transp">Transpiración</span></div>
+</div>
+
+<!-- ============ LEGEND ============ -->
+<div id="legend" class="glass">
+  <h3 data-i18n="leg_title">Estado de la planta (VPD)</h3>
+  <div class="lg"><i style="background:#4aa8ff"></i><span data-i18n="leg_low">&lt; 0.4 kPa · Saturado → hongos, no transpira (BER)</span></div>
+  <div class="lg"><i style="background:#3fe0b0"></i><span data-i18n="leg_opt">0.8–1.2 kPa · Óptimo, estomas abiertos</span></div>
+  <div class="lg"><i style="background:#ffb24a"></i><span data-i18n="leg_mid">1.2–1.6 kPa · Demanda alta</span></div>
+  <div class="lg"><i style="background:#ff5d4a"></i><span data-i18n="leg_high">&gt; 1.6 kPa · Estrés, estomas cerrados, marchitez</span></div>
+</div>
+
+<!-- ============ TOP BAR ============ -->
+<div id="topbar">
+  <div class="tb" id="btnLang">🌐 <span id="langLabel">EN</span></div>
+  <div class="tb" id="btnPlay">⏸ <span data-i18n="pause">Pausa</span></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================
+   GreenSim 3D — Simulador microclimático de invernadero
+   Single-file · Three.js r128 · física simplificada VPD
+   ============================================================ */
+
+/* ---------- i18n ---------- */
+const I18N = {
+  es:{subtitle:"Simulador Microclimático · VPD en tiempo real",presets:"Escenarios",
+    p_optimal:"Óptimo",p_hot:"Golpe de calor",p_humid:"Noche húmeda",p_chimney:"Efecto chimenea",
+    external:"Clima exterior",extT:"Temperatura exterior",extRH:"Humedad relativa",wind:"Velocidad del viento",
+    windDir:"Dirección del viento",hour:"Hora del día",actuators:"Actuadores",sideV:"Cortinas laterales",
+    roofV:"Ventanas cenitales",fan:"Extractores / ventiladores",fog:"Nebulización / cooling",
+    thermal:"Pantalla térmica",shade:"Pantalla de sombreo",hint:"Arrastra para rotar · rueda para zoom · clic derecho para desplazar",
+    r_temp:"Temp. interior",r_rh:"Humedad interior",r_vpd:"VPD foliar",r_vent:"Renovación de aire",
+    l_air:"Flujo de aire",l_heat:"Mapa de calor",l_vpd:"Estrés VPD",l_transp:"Transpiración",
+    leg_title:"Estado de la planta (VPD)",leg_low:"< 0.4 kPa · Saturado → hongos, no transpira (BER)",
+    leg_opt:"0.8–1.2 kPa · Óptimo, estomas abiertos",leg_mid:"1.2–1.6 kPa · Demanda alta",
+    leg_high:"> 1.6 kPa · Estrés, estomas cerrados, marchitez",pause:"Pausa",about:"Sobre el proyecto",
+    ab_title:"Simulador Microclimático de Invernadero",
+    ab_p1:"Esta herramienta hace visible la física invisible de un invernadero: el movimiento del aire, los gradientes de temperatura y humedad, y cómo todo ello determina el Déficit de Presión de Vapor (VPD) que viven las plantas de tomate.",
+    ab_p2:"El VPD foliar se calcula en tiempo real cruzando la presión de saturación a temperatura de hoja con la presión de vapor real del aire. Las plantas reaccionan: abren o cierran estomas, transpiran o se marchitan.",
+    ab_note:"Modelo educativo simplificado de dinámica de fluidos y termodinámica aplicada. Los valores son ilustrativos.",
+    play:"Reanudar",pauseW:"Pausa",
+    diag_low:["Riesgo de hongos","Aire saturado: la planta apenas transpira. Mala absorción de calcio → riesgo de Botrytis y necrosis apical (BER). Ventila o calienta."],
+    diag_opt:["Condiciones óptimas","Estomas abiertos, fotosíntesis y transpiración al máximo. La planta trabaja feliz."],
+    diag_mid:["Demanda creciente","La planta transpira fuerte. Vigila el riego; acercándose al límite de estrés."],
+    diag_high:["Estrés hídrico","Aire seco y caliente: la planta cierra estomas y se marchita para no deshidratarse. Nebuliza o sombrea."]},
+  en:{subtitle:"Microclimate Simulator · Real-time VPD",presets:"Scenarios",
+    p_optimal:"Optimal",p_hot:"Heat spike",p_humid:"Humid night",p_chimney:"Stack effect",
+    external:"Outdoor climate",extT:"Outdoor temperature",extRH:"Relative humidity",wind:"Wind speed",
+    windDir:"Wind direction",hour:"Time of day",actuators:"Actuators",sideV:"Side curtains",
+    roofV:"Roof vents",fan:"Extractors / fans",fog:"Fogging / cooling",
+    thermal:"Thermal screen",shade:"Shade screen",hint:"Drag to orbit · wheel to zoom · right-click to pan",
+    r_temp:"Inside temp.",r_rh:"Inside humidity",r_vpd:"Leaf VPD",r_vent:"Air exchange",
+    l_air:"Air flow",l_heat:"Heat map",l_vpd:"VPD stress",l_transp:"Transpiration",
+    leg_title:"Plant status (VPD)",leg_low:"< 0.4 kPa · Saturated → fungus, no transpiration (BER)",
+    leg_opt:"0.8–1.2 kPa · Optimal, stomata open",leg_mid:"1.2–1.6 kPa · High demand",
+    leg_high:"> 1.6 kPa · Stress, stomata closed, wilting",pause:"Pause",about:"About",
+    ab_title:"Greenhouse Microclimate Simulator",
+    ab_p1:"This tool makes the invisible physics of a greenhouse visible: air movement, temperature and humidity gradients, and how they all determine the Vapor Pressure Deficit (VPD) the tomato plants experience.",
+    ab_p2:"Leaf VPD is computed in real time by crossing the saturation pressure at leaf temperature with the actual vapor pressure of the air. Plants react: opening or closing stomata, transpiring or wilting.",
+    ab_note:"Simplified educational model of applied fluid dynamics and thermodynamics. Values are illustrative.",
+    play:"Resume",pauseW:"Pause",
+    diag_low:["Fungus risk","Saturated air: the plant barely transpires. Poor calcium uptake → Botrytis and blossom-end rot risk. Ventilate or heat."],
+    diag_opt:["Optimal conditions","Stomata open, photosynthesis and transpiration at peak. The plant is thriving."],
+    diag_mid:["Rising demand","The plant transpires hard. Watch irrigation; approaching the stress threshold."],
+    diag_high:["Water stress","Hot dry air: the plant closes stomata and wilts to avoid dehydration. Fog or shade."]}
+};
+let LANG="es";
+
+/* ---------- Estado / actuadores ---------- */
+const S = {
+  extT:28, extRH:55, wind:2, windDir:"E", hour:13,
+  sideV:40, roofV:30, fan:0, fog:0, thermal:false, shade:false,
+  Tin:28, RHin:55, Tleaf:28, VPD:1.0, stomata:1, vent:0.3, solar:0,
+  playing:true,
+  layers:{air:true,heat:true,vpd:true,transp:true}
+};
+
+/* ---------- Física ---------- */
+function svp(T){ return 0.6108*Math.exp(17.27*T/(T+237.3)); } // kPa
+function solarFromHour(h){
+  const x=(h-13)/5.2; let s=Math.exp(-x*x);
+  if(h<5.5||h>20.5) s=0;
+  return s;
+}
+function ventilationRate(){
+  const side=S.sideV/100, roof=S.roofV/100, fan=S.fan/100;
+  let cross = side * (0.06 + S.wind*0.10);
+  const dT = Math.max(0, S.Tin - S.extT);
+  let stack = roof * (0.05 + dT*0.018) * (0.45+0.55*side);  // efecto chimenea: mejor con entrada baja
+  let forced = fan*0.65;
+  let total = cross + stack + forced + 0.02;                // fuga base
+  return Math.min(1.4, total);
+}
+function stepPhysics(dt){
+  S.solar = solarFromHour(S.hour);
+  S.vent = ventilationRate();
+  const shadeF = (S.shade?0.45:0) + (S.thermal?0.25:0);
+  const heatGain = S.solar*11*(1-Math.min(0.85,shadeF));    // potencial °C sobre exterior
+  const fogCool = (S.fog/100)*4.0;
+  const nightHold = (S.thermal && S.solar<0.05)? 1.5:0;
+  const ventFrac = S.vent/(S.vent+0.10);                    // eficiencia saturante de ventilación
+  let TinEq = S.extT + heatGain*(1-ventFrac) - fogCool + nightHold;
+  S.Tin += (TinEq - S.Tin)*Math.min(1,dt*0.9);
+
+  const transp = S.stomata*12*(1-ventFrac*0.7);
+  const fogRH = (S.fog/100)*30;
+  let RHEq = S.extRH*ventFrac + Math.min(98,(S.extRH+transp+fogRH))*(1-ventFrac);
+  RHEq += fogCool*1.0;
+  S.RHin += (Math.max(8,Math.min(98,RHEq)) - S.RHin)*Math.min(1,dt*0.9);
+  S.RHin = Math.max(8,Math.min(98,S.RHin));
+
+  const leafRad = S.solar*1.3*(1-Math.min(0.85,shadeF));
+  const leafCool = S.stomata*2.0;
+  S.Tleaf = S.Tin + leafRad - leafCool;
+
+  const esLeaf = svp(S.Tleaf);
+  const eaAir = svp(S.Tin)*S.RHin/100;
+  S.VPD = Math.max(0, esLeaf - eaAir);
+
+  let st = 1;
+  if(S.VPD>1.3) st = Math.max(0.05, 1-(S.VPD-1.3)/1.7);
+  if(S.VPD<0.2) st *= 0.6;
+  st *= (0.25+0.75*Math.min(1,S.solar*1.4+ (S.hour>6&&S.hour<20?0.25:0)));
+  S.stomata += (st - S.stomata)*Math.min(1,dt*1.2);
+  S.stomata = Math.max(0.03,Math.min(1,S.stomata));
+}
+
+function vpdColor(v){
+  const c=new THREE.Color();
+  if(v<0.4) c.setHSL(0.58,0.75,0.55);
+  else if(v<0.8) c.setHSL(THREE.MathUtils.lerp(0.58,0.40,(v-0.4)/0.4),0.7,0.5);
+  else if(v<1.2) c.setHSL(0.40,0.75,0.48);
+  else if(v<1.6) c.setHSL(THREE.MathUtils.lerp(0.40,0.10,(v-1.2)/0.4),0.85,0.5);
+  else c.setHSL(THREE.MathUtils.lerp(0.10,0.00,Math.min(1,(v-1.6)/0.8)),0.9,0.5);
+  return c;
+}
+
+/* ============================================================
+   THREE.JS SCENE
+   ============================================================ */
+const app=document.getElementById('app');
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x070b10,0.012);
+const camera=new THREE.PerspectiveCamera(52,innerWidth/innerHeight,0.1,400);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(2,devicePixelRatio));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.05;
+app.appendChild(renderer.domElement);
+
+const hemi=new THREE.HemisphereLight(0xbfd4ff,0x16202c,0.7); scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xfff2d8,1.0); sun.position.set(30,40,20); scene.add(sun);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.near=1; sun.shadow.camera.far=320;
+sun.shadow.camera.left=-32; sun.shadow.camera.right=32;
+sun.shadow.camera.top=32; sun.shadow.camera.bottom=-32;
+sun.shadow.bias=-0.0004; sun.shadow.radius=3;
+const fill=new THREE.PointLight(0x4aa8ff,0.5,200); fill.position.set(-30,10,-20); scene.add(fill);
+
+/* ---------- CIELO DINÁMICO + SOL ---------- */
+const sky=new THREE.Mesh(new THREE.SphereGeometry(260,32,16),new THREE.ShaderMaterial({
+  side:THREE.BackSide, depthWrite:false,
+  uniforms:{top:{value:new THREE.Color(0x2b6fb0)},bot:{value:new THREE.Color(0x9fc4e0)}},
+  vertexShader:'varying vec3 vP; void main(){vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'varying vec3 vP; uniform vec3 top; uniform vec3 bot; void main(){float h=clamp(normalize(vP).y*0.55+0.45,0.0,1.0); gl_FragColor=vec4(mix(bot,top,h),1.0);}'
+}));
+scene.add(sky);
+const sunBall=new THREE.Mesh(new THREE.SphereGeometry(7,24,24),
+  new THREE.MeshBasicMaterial({color:0xfff0c0})); scene.add(sunBall);
+const sunHalo=new THREE.Sprite(new THREE.SpriteMaterial({
+  map:(function(){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+    const rg=g.createRadialGradient(64,64,4,64,64,64);rg.addColorStop(0,'rgba(255,240,200,.9)');rg.addColorStop(1,'rgba(255,240,200,0)');
+    g.fillStyle=rg;g.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);})(),
+  transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+sunHalo.scale.set(60,60,1); scene.add(sunHalo);
+
+const SKY={
+  dayTop:new THREE.Color(0x2b6fb0), dayBot:new THREE.Color(0xaccfe6),
+  nightTop:new THREE.Color(0x060a14), nightBot:new THREE.Color(0x101f38),
+  duskTop:new THREE.Color(0x2a3a6a), duskBot:new THREE.Color(0xe08a4a)
+};
+function updateSky(){
+  const dayF=Math.min(1,S.solar*1.15);
+  // factor crepúsculo: pico cerca del amanecer (~6.8h) y atardecer (~19.2h)
+  const dusk=Math.max(0,1-Math.min(Math.abs(S.hour-6.8),Math.abs(S.hour-19.2))/2.4);
+  const top=SKY.nightTop.clone().lerp(SKY.dayTop,dayF).lerp(SKY.duskTop,dusk*0.5);
+  const bot=SKY.nightBot.clone().lerp(SKY.dayBot,dayF).lerp(SKY.duskBot,dusk*0.85);
+  sky.material.uniforms.top.value.copy(top);
+  sky.material.uniforms.bot.value.copy(bot);
+  scene.fog.color.copy(bot).multiplyScalar(0.5);
+  // arco solar: amanece al Este (hora 6), cenit (13), ocaso al Oeste (20)
+  const ah=THREE.MathUtils.clamp((S.hour-6)/14,0,1);
+  const ang=ah*Math.PI;
+  const elev=Math.sin(ang), horiz=-Math.cos(ang);
+  const sx=horiz*150, sy=elev*150-8, sz=-50;
+  sunBall.position.set(sx,sy,sz);
+  sunHalo.position.copy(sunBall.position);
+  const up=S.hour>5.5&&S.hour<20.5;
+  sunBall.visible=up; sunHalo.visible=up;
+  sunBall.material.color.setHSL(THREE.MathUtils.lerp(0.05,0.13,elev),0.85,0.6+0.1*elev);
+  sun.position.set(sx*0.5,Math.max(8,sy*0.6),sz*0.5+30);
+}
+
+const W=24, D=34, WALL=5, RIDGE=9;
+const HX=W/2, HZ=D/2;
+
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(W+30,D+30),
+  new THREE.MeshStandardMaterial({color:0x0c141c,roughness:1,metalness:0}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-0.02; ground.receiveShadow=true; scene.add(ground);
+const grid=new THREE.GridHelper(W+30,30,0x1d2a38,0x121a24); grid.position.y=0; scene.add(grid);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(W,D),
+  new THREE.MeshStandardMaterial({color:0x1a2330,roughness:.95}));
+floor.rotation.x=-Math.PI/2; floor.position.y=0.01; floor.receiveShadow=true; scene.add(floor);
+
+const glassMat=new THREE.MeshPhysicalMaterial({color:0x9fd8ff,transparent:true,opacity:0.10,
+  roughness:0.1,metalness:0,side:THREE.DoubleSide,depthWrite:false});
+const frameMat=new THREE.MeshStandardMaterial({color:0x2c3a4a,roughness:.6,metalness:.4});
+
+const struct=new THREE.Group(); scene.add(struct);
+function beam(x,y,z,sx,sy,sz){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),frameMat);
+  m.position.set(x,y,z); struct.add(m); return m;
+}
+for(const zx of [-HZ,HZ]) for(const xx of [-HX,HX]) beam(xx,WALL/2,zx,0.25,WALL,0.25);
+for(let z=-HZ;z<=HZ;z+=D/4){ beam(-HX,WALL/2,z,0.18,WALL,0.18); beam(HX,WALL/2,z,0.18,WALL,0.18);}
+beam(-HX,WALL,0,0.2,0.2,D); beam(HX,WALL,0,0.2,0.2,D);
+beam(0,RIDGE,0,0.2,0.2,D);
+const roofLen=Math.hypot(HX,RIDGE-WALL);
+const roofAng=Math.atan2(RIDGE-WALL,HX);
+function rafter(z){
+  for(const s of [-1,1]){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(roofLen,0.14,0.14),frameMat);
+    m.position.set(s*HX/2,(WALL+RIDGE)/2,z);
+    m.rotation.z=s*-roofAng; struct.add(m);
+  }
+}
+for(let z=-HZ;z<=HZ;z+=D/8) rafter(z);
+
+function glassPanel(w,h,pos,rot){
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),glassMat);
+  m.position.copy(pos); if(rot)m.rotation.copy(rot); scene.add(m); return m;
+}
+for(const s of [-1,1]){
+  glassPanel(W,WALL,new THREE.Vector3(0,WALL/2,s*HZ),new THREE.Euler(0,0,0));
+}
+for(const s of [-1,1]){
+  glassPanel(roofLen,D,new THREE.Vector3(s*HX/2,(WALL+RIDGE)/2,0),
+    new THREE.Euler(Math.PI/2,0,s*(Math.PI/2-roofAng),'XYZ'));
+}
+
+/* CORTINAS LATERALES */
+const curtainMat=new THREE.MeshStandardMaterial({color:0xeef3f7,roughness:.85,transparent:true,opacity:.9,side:THREE.DoubleSide});
+const sideCurtains=[];
+for(const s of [-1,1]){
+  const g=new THREE.Mesh(new THREE.PlaneGeometry(D-0.4,WALL-0.3),curtainMat.clone());
+  g.position.set(s*HX,(WALL-0.3)/2,0);
+  g.rotation.y=Math.PI/2;
+  scene.add(g); sideCurtains.push({mesh:g,side:s});
+}
+function updateSideCurtains(){
+  const open=S.sideV/100;
+  for(const c of sideCurtains){
+    const h=(WALL-0.3)*(1-open);
+    c.mesh.scale.y=Math.max(0.001,1-open);
+    c.mesh.position.y=(WALL-0.3)-h/2;
+    c.mesh.visible=open<0.99;
+  }
+}
+
+/* VENTANAS CENITALES (claraboyas con marco que se abren desde la cumbrera) */
+const ventGlassMat=new THREE.MeshPhysicalMaterial({color:0xcdeefe,transparent:true,opacity:.4,
+  roughness:.06,metalness:0,side:THREE.DoubleSide,depthWrite:false});
+const ventFrameMat=new THREE.MeshStandardMaterial({color:0x5a6e84,roughness:.45,metalness:.55});
+const roofVents=[];
+const ventW=roofLen*0.74, ventLen=D*0.82, ft=0.14;
+for(const s of [-1,1]){
+  const pivot=new THREE.Group();
+  pivot.position.set(0,RIDGE-0.05,0);          // bisagra en la cumbrera
+  pivot.rotation.z=s*-roofAng;                 // alinea el bastidor con el faldón
+  const lift=new THREE.Group(); pivot.add(lift);
+  const sash=new THREE.Group(); sash.position.set(s*ventW/2,0,0); lift.add(sash);
+  // vidrio
+  const glass=new THREE.Mesh(new THREE.PlaneGeometry(ventW,ventLen),ventGlassMat);
+  glass.rotation.x=-Math.PI/2; sash.add(glass);
+  // marco
+  const mkbar=(w,d,x,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,ft,d),ventFrameMat);
+    m.position.set(x,0,z); m.castShadow=true; return m;};
+  sash.add(mkbar(ventW,ft,0, ventLen/2));
+  sash.add(mkbar(ventW,ft,0,-ventLen/2));
+  sash.add(mkbar(ft,ventLen,-ventW/2,0));
+  sash.add(mkbar(ft,ventLen, ventW/2,0));
+  // travesaños
+  for(let k=-1;k<=1;k++) sash.add(mkbar(ft,ventLen,k*ventW/3,0));
+  scene.add(pivot);
+  roofVents.push({lift,side:s});
+}
+function updateRoofVents(){
+  const open=S.roofV/100;
+  for(const v of roofVents){ v.lift.rotation.z = v.side*open*0.8; }  // levanta el borde exterior
+}
+
+/* PANTALLAS HORIZONTALES (sombreo verde y térmica aluminizada) */
+function makeScreen(y,color,opacity,metal){
+  const grp=new THREE.Group(); grp.position.set(0,y,-HZ+0.5);
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(W-0.8,D-1),
+    new THREE.MeshStandardMaterial({color,roughness:metal?0.35:0.95,metalness:metal?0.8:0.0,
+      transparent:true,opacity,side:THREE.DoubleSide}));
+  mesh.rotation.x=-Math.PI/2; mesh.position.z=(D-1)/2; mesh.receiveShadow=true;
+  grp.add(mesh); grp.scale.z=0.0001; grp.visible=false; scene.add(grp);
+  return grp;
+}
+const shadeScreen=makeScreen(WALL-0.3,0x24492b,0.85,false);   // malla de sombreo verde
+const thermalScreen=makeScreen(WALL-0.08,0xbcc7cf,0.72,true); // pantalla térmica aluminizada
+const screenState={shade:0,thermal:0};
+function updateScreens(dt){
+  screenState.shade  += ((S.shade?1:0)-screenState.shade)*Math.min(1,dt*3.5);
+  screenState.thermal+= ((S.thermal?1:0)-screenState.thermal)*Math.min(1,dt*3.5);
+  shadeScreen.scale.z=Math.max(0.0001,screenState.shade);
+  shadeScreen.visible=screenState.shade>0.01;
+  thermalScreen.scale.z=Math.max(0.0001,screenState.thermal);
+  thermalScreen.visible=screenState.thermal>0.01;
+}
+
+/* EXTRACTORES */
+const fans=[];
+for(const fx of [-HX*0.5,HX*0.5]){
+  const grp=new THREE.Group(); grp.position.set(fx,WALL*0.55,HZ-0.1);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.1,0.12,8,24),frameMat);
+  grp.add(ring);
+  const blades=new THREE.Group();
+  for(let i=0;i<4;i++){
+    const b=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.18,0.04),
+      new THREE.MeshStandardMaterial({color:0x3a4858,roughness:.5,metalness:.5}));
+    b.position.x=0.5; const w=new THREE.Group(); w.add(b); w.rotation.z=i*Math.PI/2; blades.add(w);
+  }
+  grp.add(blades); scene.add(grp); fans.push({grp,blades});
+}
+
+/* PLANTAS DE TOMATE */
+const plants=[];
+const rows=4, perRow=9;
+const fruitMat=new THREE.MeshStandardMaterial({color:0xe5402a,roughness:.5});
+for(let r=0;r<rows;r++){
+  for(let i=0;i<perRow;i++){
+    const px=-HX+ (W/(rows+1))*(r+1);
+    const pz=-HZ+2 + (D-4)/(perRow-1)*i;
+    const g=new THREE.Group(); g.position.set(px,0,pz);
+    const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.1,2.4,6),
+      new THREE.MeshStandardMaterial({color:0x4a7a32,roughness:.9}));
+    stem.position.y=1.2; g.add(stem);
+    const foliage=[];
+    for(let k=0;k<5;k++){
+      const sph=new THREE.Mesh(new THREE.IcosahedronGeometry(0.5+Math.random()*0.18,0),
+        new THREE.MeshStandardMaterial({color:0x3fae4a,roughness:.85,flatShading:true}));
+      sph.position.set((Math.random()-.5)*0.7,0.9+k*0.4,(Math.random()-.5)*0.7);
+      g.add(sph); foliage.push(sph);
+    }
+    for(let f=0;f<3;f++){
+      const fr=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,8),fruitMat);
+      fr.position.set((Math.random()-.5)*0.6,1+Math.random()*1.2,(Math.random()-.5)*0.6);
+      g.add(fr);
+    }
+    scene.add(g);
+    plants.push({grp:g,foliage,baseY:g.position.y});
+  }
+}
+
+/* ICONOS de hongos */
+function makeIconTexture(emoji){
+  const c=document.createElement('canvas');c.width=c.height=128;
+  const x=c.getContext('2d');x.font='90px serif';x.textAlign='center';x.textBaseline='middle';
+  x.fillText(emoji,64,72);
+  return new THREE.CanvasTexture(c);
+}
+const fungusTex=makeIconTexture('🍄');
+const fungusSprites=[];
+for(let i=0;i<6;i++){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:fungusTex,transparent:true,opacity:0}));
+  sp.scale.set(1.4,1.4,1); sp.visible=false; scene.add(sp); fungusSprites.push(sp);
+}
+
+/* ---------- SUSTRATO / CAMAS DE CULTIVO ---------- */
+const bedMat=new THREE.MeshStandardMaterial({color:0x3a2a1e,roughness:1});
+const rowsN=4;
+for(let r=0;r<rowsN;r++){
+  const px=-HX+(W/(rowsN+1))*(r+1);
+  const bed=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.3,D-3),bedMat);
+  bed.position.set(px,0.15,0); bed.receiveShadow=true; bed.castShadow=true; scene.add(bed);
+}
+
+/* ---------- NUBES ---------- */
+function cloudTex(){
+  const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+  for(let i=0;i<14;i++){const x=30+Math.random()*68,y=40+Math.random()*36,r=14+Math.random()*22;
+    const rg=g.createRadialGradient(x,y,2,x,y,r);rg.addColorStop(0,'rgba(255,255,255,.55)');rg.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=rg;g.beginPath();g.arc(x,y,r,0,7);g.fill();}
+  return new THREE.CanvasTexture(c);
+}
+const clouds=[]; const cTex=cloudTex();
+for(let i=0;i<9;i++){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:cTex,transparent:true,opacity:0.5,depthWrite:false}));
+  const sc=34+Math.random()*44; sp.scale.set(sc,sc*0.55,1);
+  sp.position.set(-160+Math.random()*320,55+Math.random()*60,-95-Math.random()*80);
+  sp.userData.sp=4+Math.random()*5; scene.add(sp); clouds.push(sp);
+}
+function updateClouds(dt){
+  const vis=Math.min(1,S.solar*1.4);
+  for(const c of clouds){
+    c.position.x+=dt*c.userData.sp;
+    if(c.position.x>205)c.position.x=-205;
+    c.material.opacity=0.5*vis; c.visible=vis>0.02;
+  }
+}
+
+/* ---------- CONDENSACIÓN EN VIDRIO (HR alta) ---------- */
+const condN=900; const condGeo=new THREE.BufferGeometry(); const condPos=new Float32Array(condN*3);
+function placeDrop(i){
+  const t=Math.random();
+  if(t<0.6){ const s=Math.random()<0.5?-1:1; const u=Math.random();
+    condPos[i*3]=s*HX*(1-u)*0.98; condPos[i*3+1]=WALL+(RIDGE-WALL)*u-0.1; condPos[i*3+2]=(Math.random()-0.5)*(D-1);
+  }else{ const s=Math.random()<0.5?-1:1;
+    condPos[i*3]=(Math.random()-0.5)*(W-1); condPos[i*3+1]=0.4+Math.random()*(WALL-0.6); condPos[i*3+2]=s*HZ*0.99; }
+}
+for(let i=0;i<condN;i++) placeDrop(i);
+condGeo.setAttribute('position',new THREE.BufferAttribute(condPos,3));
+const condMat=new THREE.PointsMaterial({color:0xcfe8ff,size:0.13,transparent:true,opacity:0,depthWrite:false});
+const condPts=new THREE.Points(condGeo,condMat); scene.add(condPts);
+function updateCondensation(){
+  const f=Math.max(0,(S.RHin-82)/16)*Math.max(0.2,1-S.vent);
+  condMat.opacity=Math.min(0.85,f); condPts.visible=f>0.02;
+}
+
+/* ============================================================
+   PARTÍCULAS DE AIRE
+   ============================================================ */
+const NP=1100;
+const pGeo=new THREE.BufferGeometry();
+const pPos=new Float32Array(NP*3);
+const pCol=new Float32Array(NP*3);
+const pVel=new Float32Array(NP*3);
+const pHeat=new Float32Array(NP);
+function rand(a,b){return a+Math.random()*(b-a);}
+function spawnParticle(i,fromVent){
+  let x,y,z;
+  if(fromVent && S.sideV>5){
+    const wd=S.windDir;
+    if(wd==="N"||wd==="S"){
+      x=rand(-HX,HX); z=(wd==="S")?HZ:-HZ; y=rand(0.4,WALL*0.8);
+    }else{
+      x=(wd==="E")?HX:-HX; z=rand(-HZ,HZ); y=rand(0.4,WALL*0.8);
+    }
+    pHeat[i]=0.12;
+  }else{
+    x=rand(-HX+1,HX-1); y=rand(0.3,RIDGE-1); z=rand(-HZ+1,HZ-1);
+    pHeat[i]=rand(0.4,0.9);
+  }
+  pPos[i*3]=x;pPos[i*3+1]=y;pPos[i*3+2]=z;
+  pVel[i*3]=0;pVel[i*3+1]=0;pVel[i*3+2]=0;
+}
+for(let i=0;i<NP;i++) spawnParticle(i,false);
+pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
+pGeo.setAttribute('color',new THREE.BufferAttribute(pCol,3));
+const pMat=new THREE.PointsMaterial({size:0.28,vertexColors:true,transparent:true,opacity:0.72,
+  depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:true});
+const points=new THREE.Points(pGeo,pMat); scene.add(points);
+
+const colCold=new THREE.Color(0x4aa8ff), colHot=new THREE.Color(0xff5d3a);
+function updateParticles(dt){
+  const wind=S.wind, wd=S.windDir, side=S.sideV/100, roof=S.roofV/100, fan=S.fan/100;
+  let wvx=0,wvz=0;
+  if(wd==="E")wvx=-1; else if(wd==="W")wvx=1; else if(wd==="N")wvz=1; else wvz=-1;
+  const stratif=(S.Tin-S.extT);
+  for(let i=0;i<NP;i++){
+    let x=pPos[i*3],y=pPos[i*3+1],z=pPos[i*3+2];
+    let vx=pVel[i*3],vy=pVel[i*3+1],vz=pVel[i*3+2];
+
+    let localHeat=pHeat[i];
+    if(y<2.5) localHeat+=dt*0.25*Math.max(0,stratif)/15;
+    localHeat*=(1-dt*0.05);
+    pHeat[i]=Math.max(0,Math.min(1,localHeat));
+
+    vy += (pHeat[i]-0.35)*dt*3.2*(0.6+stratif*0.05);
+
+    if(side>0.05 && wind>0.1){
+      const nearVentX = (wd==="E"&&x>HX-3)||(wd==="W"&&x<-HX+3);
+      const nearVentZ = (wd==="S"&&z>HZ-3)||(wd==="N"&&z<-HZ+3);
+      if(nearVentX||nearVentZ){
+        vx += wvx*wind*side*dt*2.4;
+        vz += wvz*wind*side*dt*2.4;
+      }
+      vx += wvx*wind*side*dt*0.25;
+      vz += wvz*wind*side*dt*0.25;
+    }
+
+    if(fan>0.02){
+      vz += (z< HZ? fan*dt*1.8*(1/(1+Math.abs(HZ-z)*0.15)) :0);
+    }
+
+    const roofY=WALL+(RIDGE-WALL)*(1-Math.abs(x)/HX);
+    if(y>roofY-0.6){
+      if(roof>0.08 && Math.abs(x)<HX*0.5){
+        if(Math.random()<roof*0.4){ spawnParticle(i,true); continue; }
+        vy*=0.4;
+      }else{
+        vy=-Math.abs(vy)*0.5 - 0.3*dt;
+        vx += (x>0?-1:1)*dt*2.2;
+        pHeat[i]=Math.min(1,pHeat[i]+0.02);
+      }
+      y=Math.min(y,roofY-0.6);
+    }
+
+    vx*=0.94; vy*=0.95; vz*=0.94;
+    const sp=Math.hypot(vx,vy,vz); if(sp>6){const k=6/sp;vx*=k;vy*=k;vz*=k;}
+
+    x+=vx*dt*6; y+=vy*dt*6; z+=vz*dt*6;
+    if(y<0.2){ y=0.2; vy=Math.abs(vy)*0.3; }
+
+    if(x<-HX-2||x>HX+2||z<-HZ-2||z>HZ+2||y>RIDGE+1){
+      spawnParticle(i, S.sideV>5 && wind>0.2);
+      x=pPos[i*3];y=pPos[i*3+1];z=pPos[i*3+2];vx=vy=vz=0;
+    }
+
+    pPos[i*3]=x;pPos[i*3+1]=y;pPos[i*3+2]=z;
+    pVel[i*3]=vx;pVel[i*3+1]=vy;pVel[i*3+2]=vz;
+
+    const c=colCold.clone().lerp(colHot,pHeat[i]);
+    pCol[i*3]=c.r;pCol[i*3+1]=c.g;pCol[i*3+2]=c.b;
+  }
+  pGeo.attributes.position.needsUpdate=true;
+  pGeo.attributes.color.needsUpdate=true;
+}
+
+/* ============================================================
+   MAPA DE CALOR VOLUMÉTRICO
+   ============================================================ */
+const heatGroup=new THREE.Group(); scene.add(heatGroup);
+const heatLayers=[];
+const NL=6;
+for(let l=0;l<NL;l++){
+  const y=0.6+(RIDGE-1.2)*(l/(NL-1));
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(W-0.6,D-0.6),
+    new THREE.MeshBasicMaterial({transparent:true,opacity:0.0,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));
+  m.rotation.x=-Math.PI/2; m.position.y=y; heatGroup.add(m); heatLayers.push({mesh:m,y});
+}
+const stagnant=[];
+for(const sx of [-1,1])for(const sz of [-1,1]){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(2.4,12,12),
+    new THREE.MeshBasicMaterial({color:0xff4030,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending}));
+  m.position.set(sx*(HX-2.5),1.6,sz*(HZ-3)); heatGroup.add(m); stagnant.push(m);
+}
+function updateHeatmap(){
+  const stratif=Math.max(0,S.Tin-S.extT);
+  for(let l=0;l<NL;l++){
+    const f=l/(NL-1);
+    const inten=Math.min(0.5, (0.04+stratif*0.018)*(0.3+f*1.1));
+    const c=new THREE.Color().setHSL(THREE.MathUtils.lerp(0.6,0.0,Math.min(1,f*0.7+stratif*0.02)),0.85,0.5);
+    heatLayers[l].mesh.material.color=c;
+    heatLayers[l].mesh.material.opacity=S.layers.heat?inten:0;
+  }
+  const stag=Math.max(0,(1-S.vent*1.4))*Math.min(1,(stratif*0.06+ (S.RHin-60)/50));
+  for(const m of stagnant){ m.material.opacity=S.layers.heat? Math.max(0,stag)*0.5:0; }
+}
+
+/* ============================================================
+   TRANSPIRACIÓN + PLANTAS
+   ============================================================ */
+const transpGeo=new THREE.BufferGeometry();
+const NT=300; const tPos=new Float32Array(NT*3); const tLife=new Float32Array(NT);
+for(let i=0;i<NT;i++){ tPos[i*3+1]=-99; tLife[i]=Math.random(); }
+transpGeo.setAttribute('position',new THREE.BufferAttribute(tPos,3));
+const transpMat=new THREE.PointsMaterial({color:0xbfe9ff,size:0.16,transparent:true,opacity:0.5,depthWrite:false,blending:THREE.AdditiveBlending});
+const transpPts=new THREE.Points(transpGeo,transpMat); scene.add(transpPts);
+
+function updatePlants(dt){
+  const col=vpdColor(S.VPD);
+  const wilt = S.VPD>1.6 ? Math.min(1,(S.VPD-1.6)/1.0) : 0;
+  const neutral=new THREE.Color(0x3fae4a);
+  for(const p of plants){
+    for(const f of p.foliage){ f.material.color.copy(S.layers.vpd?col:neutral); }
+    const target=1-wilt*0.35;
+    p.grp.scale.y += (target-p.grp.scale.y)*Math.min(1,dt*2);
+    p.grp.rotation.z += (wilt*0.18 - p.grp.rotation.z)*Math.min(1,dt*2);
+  }
+  const showFungus=S.VPD<0.4 && S.layers.vpd;
+  fungusSprites.forEach((sp,i)=>{
+    if(showFungus){
+      const p=plants[(i*7)%plants.length];
+      sp.position.set(p.grp.position.x,3.4,p.grp.position.z);
+      sp.material.opacity+=(0.95-sp.material.opacity)*0.1; sp.visible=true;
+    }else{ sp.material.opacity+=(0-sp.material.opacity)*0.15; if(sp.material.opacity<0.02)sp.visible=false;}
+  });
+
+  const emit = S.layers.transp && S.stomata>0.3 && S.VPD>0.4 && S.VPD<1.7;
+  for(let i=0;i<NT;i++){
+    tLife[i]-=dt*0.6;
+    if(tLife[i]<=0){
+      if(emit && Math.random()<S.stomata){
+        const p=plants[(Math.random()*plants.length)|0];
+        tPos[i*3]=p.grp.position.x+(Math.random()-.5)*1.2;
+        tPos[i*3+1]=1.5+Math.random()*1.5;
+        tPos[i*3+2]=p.grp.position.z+(Math.random()-.5)*1.2;
+        tLife[i]=Math.random()*0.8+0.4;
+      }else{ tPos[i*3+1]=-99; tLife[i]=Math.random()*0.5; }
+    }else{
+      tPos[i*3+1]+=dt*1.6; tPos[i*3]+=(Math.random()-.5)*0.02;
+    }
+  }
+  transpGeo.attributes.position.needsUpdate=true;
+  transpMat.opacity = emit?0.5:0;
+}
+
+/* ============================================================
+   ÓRBITA (controles propios)
+   ============================================================ */
+const orbit={theta:0.9,phi:1.0,r:48,tx:0,ty:3,tz:0,down:false,pan:false,px:0,py:0};
+function applyCam(){
+  const x=orbit.tx+orbit.r*Math.sin(orbit.phi)*Math.cos(orbit.theta);
+  const y=orbit.ty+orbit.r*Math.cos(orbit.phi);
+  const z=orbit.tz+orbit.r*Math.sin(orbit.phi)*Math.sin(orbit.theta);
+  camera.position.set(x,y,z); camera.lookAt(orbit.tx,orbit.ty,orbit.tz);
+}
+applyCam();
+const cv=renderer.domElement;
+cv.addEventListener('mousedown',e=>{orbit.down=true;orbit.pan=(e.button===2);orbit.px=e.clientX;orbit.py=e.clientY;});
+addEventListener('mouseup',()=>{orbit.down=false;orbit.pan=false;});
+addEventListener('mousemove',e=>{
+  if(!orbit.down)return;
+  const dx=e.clientX-orbit.px,dy=e.clientY-orbit.py;orbit.px=e.clientX;orbit.py=e.clientY;
+  if(orbit.pan){
+    const s=orbit.r*0.0016; orbit.tx-=dx*s*Math.cos(orbit.theta); orbit.tz-=dx*s*Math.sin(orbit.theta); orbit.ty+=dy*s;
+  }else{
+    orbit.theta-=dx*0.005; orbit.phi=Math.max(0.15,Math.min(1.5,orbit.phi-dy*0.005));
+  }
+  applyCam();
+});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('wheel',e=>{e.preventDefault();orbit.r=Math.max(16,Math.min(110,orbit.r+e.deltaY*0.03));applyCam();},{passive:false});
+let lastTouch=null;
+cv.addEventListener('touchstart',e=>{lastTouch=e.touches;},{passive:true});
+cv.addEventListener('touchmove',e=>{
+  if(e.touches.length===1&&lastTouch){
+    const dx=e.touches[0].clientX-lastTouch[0].clientX,dy=e.touches[0].clientY-lastTouch[0].clientY;
+    orbit.theta-=dx*0.006;orbit.phi=Math.max(0.15,Math.min(1.5,orbit.phi-dy*0.006));applyCam();
+  }else if(e.touches.length===2&&lastTouch&&lastTouch.length===2){
+    const d0=Math.hypot(lastTouch[0].clientX-lastTouch[1].clientX,lastTouch[0].clientY-lastTouch[1].clientY);
+    const d1=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    orbit.r=Math.max(16,Math.min(110,orbit.r-(d1-d0)*0.06));applyCam();
+  }
+  lastTouch=e.touches;
+},{passive:true});
+
+/* ============================================================
+   RENDER LOOP
+   ============================================================ */
+// emisores de sombra
+plants.forEach(p=>p.grp.traverse(o=>{if(o.isMesh)o.castShadow=true;}));
+struct.traverse(o=>{if(o.isMesh){o.castShadow=true;}});
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(S.playing){
+    stepPhysics(dt*2.2);
+    updateParticles(dt);
+    updatePlants(dt);
+  }
+  updateSideCurtains(); updateRoofVents(); updateScreens(dt); updateHeatmap(); updateSky();
+  updateClouds(dt); updateCondensation();
+  fans.forEach(f=>{f.blades.rotation.z+= (S.fan/100)*dt*30;});
+  points.visible=S.layers.air;
+  transpPts.visible=S.layers.transp;
+  sun.intensity=0.2+S.solar*1.2;
+  hemi.intensity=0.35+S.solar*0.5;
+  hemi.color.setHSL(THREE.MathUtils.lerp(0.6,0.09,S.solar),0.5,0.6);
+  refreshHUD();
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ============================================================
+   HUD
+   ============================================================ */
+let hudT=0;
+function refreshHUD(){
+  hudT++; if(hudT%6) return;
+  document.getElementById('rTemp').innerHTML=S.Tin.toFixed(1)+'<span> °C</span>';
+  document.getElementById('rRH').innerHTML=S.RHin.toFixed(0)+'<span> %</span>';
+  document.getElementById('rVPD').innerHTML=S.VPD.toFixed(2)+'<span> kPa</span>';
+  document.getElementById('rVent').innerHTML=(S.vent*45).toFixed(0)+'<span> ren/h</span>';
+  const pct=Math.max(0,Math.min(100,(S.VPD/2.5)*100));
+  document.getElementById('vpdNeedle').style.left=pct+'%';
+  const t=I18N[LANG]; let key,cls;
+  if(S.VPD<0.4){key='diag_low';cls='diag cold';}
+  else if(S.VPD<1.2){key='diag_opt';cls='diag';}
+  else if(S.VPD<1.6){key='diag_mid';cls='diag';}
+  else {key='diag_high';cls='diag warn';}
+  const d=document.getElementById('diag'); d.className=cls;
+  d.innerHTML='<b>'+t[key][0]+'</b>'+t[key][1];
+  // brújula de viento (apunta a sotavento)
+  const rotMap={N:180,E:270,S:0,W:90};
+  const nd=document.getElementById('windNeedle');
+  nd.setAttribute('transform','rotate('+(rotMap[S.windDir]||0)+' 50 50)');
+  nd.style.opacity=S.wind<0.2?0.25:Math.min(1,0.45+S.wind/8);
+  const dirEs={N:'N',E:'E',S:'S',W:'O'}, dirEn={N:'N',E:'E',S:'S',W:'W'};
+  const lbl=(LANG==='es'?'Viento del ':'Wind from ')+(LANG==='es'?dirEs:dirEn)[S.windDir];
+  document.getElementById('windTxt').textContent= S.wind<0.2 ? (LANG==='es'?'Calma (sin viento)':'Calm (no wind)') : lbl+' · '+S.wind.toFixed(1)+' m/s';
+}
+
+/* ============================================================
+   UI BINDINGS
+   ============================================================ */
+function bindRange(id,key,fmt){
+  const el=document.getElementById(id);
+  const lab=document.querySelector('label[data-k="'+id+'"] b');
+  el.addEventListener('input',()=>{S[key]=parseFloat(el.value); if(lab)lab.textContent=fmt(S[key]);});
+  if(lab)lab.textContent=fmt(S[key]);
+}
+bindRange('extT','extT',v=>v.toFixed(1)+'°C');
+bindRange('extRH','extRH',v=>v.toFixed(0)+'%');
+bindRange('wind','wind',v=>v.toFixed(1)+' m/s');
+bindRange('hour','hour',v=>String(Math.floor(v)).padStart(2,'0')+':'+(v%1?'30':'00'));
+bindRange('sideV','sideV',v=>v.toFixed(0)+'%');
+bindRange('roofV','roofV',v=>v.toFixed(0)+'%');
+bindRange('fan','fan',v=>v.toFixed(0)+'%');
+bindRange('fog','fog',v=>v.toFixed(0)+'%');
+
+document.querySelectorAll('#windDir button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#windDir button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); S.windDir=b.dataset.v;
+}));
+function bindSw(id,key){const el=document.getElementById(id);
+  el.addEventListener('click',()=>{S[key]=!S[key];el.classList.toggle('on',S[key]);});}
+bindSw('thermal','thermal'); bindSw('shade','shade');
+
+document.querySelectorAll('#layers .chip').forEach(c=>c.addEventListener('click',()=>{
+  const l=c.dataset.layer; S.layers[l]=!S.layers[l]; c.classList.toggle('on',S.layers[l]);
+}));
+
+document.getElementById('btnPlay').addEventListener('click',()=>{
+  S.playing=!S.playing;
+  const b=document.getElementById('btnPlay');
+  b.innerHTML=(S.playing?'⏸ ':'▶ ')+'<span>'+(S.playing?I18N[LANG].pauseW:I18N[LANG].play)+'</span>';
+});
+
+function applyLang(){
+  document.documentElement.lang=LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const k=el.getAttribute('data-i18n'); if(I18N[LANG][k]!==undefined) el.textContent=I18N[LANG][k];
+  });
+  document.getElementById('langLabel').textContent= LANG==='es'?'EN':'ES';
+  const b=document.getElementById('btnPlay');
+  b.innerHTML=(S.playing?'⏸ ':'▶ ')+'<span>'+(S.playing?I18N[LANG].pauseW:I18N[LANG].play)+'</span>';
+}
+document.getElementById('btnLang').addEventListener('click',()=>{LANG=(LANG==='es')?'en':'es';applyLang();});
+applyLang();
+
+/* PRESETS */
+const PRESETS={
+  optimal:{extT:23,extRH:64,wind:2.5,windDir:"E",hour:11,sideV:60,roofV:50,fan:25,fog:5,thermal:false,shade:false},
+  hot:{extT:37,extRH:30,wind:0.5,windDir:"E",hour:14,sideV:20,roofV:15,fan:0,fog:0,thermal:false,shade:false},
+  humid:{extT:16,extRH:88,wind:0.3,windDir:"N",hour:3,sideV:5,roofV:5,fan:0,fog:0,thermal:true,shade:false},
+  chimney:{extT:31,extRH:55,wind:0,windDir:"E",hour:13,sideV:40,roofV:85,fan:0,fog:0,thermal:false,shade:false}
+};
+function applyPreset(p){
+  Object.assign(S,p);
+  for(const id of ['extT','extRH','wind','hour','sideV','roofV','fan','fog']){
+    const el=document.getElementById(id); el.value=S[id];
+    el.dispatchEvent(new Event('input'));
+  }
+  document.querySelectorAll('#windDir button').forEach(x=>x.classList.toggle('active',x.dataset.v===S.windDir));
+  document.getElementById('thermal').classList.toggle('on',S.thermal);
+  document.getElementById('shade').classList.toggle('on',S.shade);
+}
+document.querySelectorAll('.presets button').forEach(b=>b.addEventListener('click',()=>applyPreset(PRESETS[b.dataset.preset])));
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// arranca en el escenario óptimo (buena primera impresión) y pre-estabiliza
+applyPreset(PRESETS.optimal);
+for(let i=0;i<200;i++) stepPhysics(0.1);
+</script>
+</body>
+</html>
